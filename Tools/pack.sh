@@ -78,8 +78,8 @@ function pack(){
 	cp -rf "${CREATE_IPA}" "${PROJECT_DIR}"/LatestBuild/
 
 	# deal ipa or app
-	TARGET_APP_PATH=$(find "${SRCROOT}/${TARGET_NAME}" -type d | grep ".app$" | head -n 1)
-	TARGET_IPA_PATH=$(find "${SRCROOT}/${TARGET_NAME}" -type f | grep ".ipa$" | head -n 1)
+	TARGET_APP_PATH=$(find "${SRCROOT}/${TARGET_NAME}" -type d | grep "\.app$" | head -n 1)
+	TARGET_IPA_PATH=$(find "${SRCROOT}/${TARGET_NAME}" -type f | grep "\.ipa$" | head -n 1)
 
 	if [[ ${TARGET_APP_PATH} ]]; then
 		cp -rf "${TARGET_APP_PATH}" "${TARGET_APP_PUT_PATH}"
@@ -88,28 +88,43 @@ function pack(){
 	if [[ ! ${TARGET_APP_PATH} ]] && [[ ! ${TARGET_IPA_PATH} ]] && [[ ${MONKEYDEV_TARGET_APP} != "Optional" ]]; then
 		echo "pulling decrypted ipa from jailbreak device......."
 		PYTHONIOENCODING=utf-8 ${MONKEYDEV_PATH}/bin/dump.py ${MONKEYDEV_TARGET_APP} -o "${TARGET_APP_PUT_PATH}/TargetApp.ipa" || panic 1 "dump.py error"
-		TARGET_IPA_PATH=$(find "${TARGET_APP_PUT_PATH}" -type f | grep ".ipa$" | head -n 1)
+		TARGET_IPA_PATH=$(find "${TARGET_APP_PUT_PATH}" -type f | grep "\.ipa$" | head -n 1)
 	fi
 
 	if [[ ! ${TARGET_APP_PATH} ]] && [[ ${TARGET_IPA_PATH} ]]; then
 		unzip -oqq "${TARGET_IPA_PATH}" -d "${TEMP_PATH}"
 		cp -rf "${TEMP_PATH}/Payload/"*.app "${TARGET_APP_PUT_PATH}"
 	fi
+	
+	if [ -f "${BUILD_APP_PATH}/embedded.mobileprovision" ]; then
+		mv "${BUILD_APP_PATH}/embedded.mobileprovision" "${BUILD_APP_PATH}"/..
+	fi
 
-	#remove origin .app
-	rm -rf "${BUILD_APP_PATH}" || true
-	mkdir -p "${BUILD_APP_PATH}" || true
+	TARGET_APP_PATH=$(find "${TARGET_APP_PUT_PATH}" -type d | grep "\.app$" | head -n 1)
 
-	TARGET_APP_PATH=$(find "${TARGET_APP_PUT_PATH}" -type d | grep ".app$" | head -n 1)
+	if [[ -f "${TARGET_APP_PUT_PATH}"/.current_put_app ]]; then
+		if [[ $(cat ${TARGET_APP_PUT_PATH}/.current_put_app) !=  "${TARGET_APP_PATH}" ]]; then
+			rm -rf "${BUILD_APP_PATH}" || true
+		 	mkdir -p "${BUILD_APP_PATH}" || true
+		 	rm -rf "${TARGET_APP_PUT_PATH}"/.current_put_app
+			echo "${TARGET_APP_PATH}" >> "${TARGET_APP_PUT_PATH}"/.current_put_app
+		fi
+	fi
 
 	COPY_APP_PATH=${TARGET_APP_PATH}
 
 	if [[ "${TARGET_APP_PATH}" = "" ]]; then
 		COPY_APP_PATH=${DEMOTARGET_APP_PATH}
+		cp -rf "${COPY_APP_PATH}/" "${BUILD_APP_PATH}/"
+		checkApp "${BUILD_APP_PATH}"
+	else
+		checkApp "${COPY_APP_PATH}"
+		cp -rf "${COPY_APP_PATH}/" "${BUILD_APP_PATH}/"
 	fi
 
-	checkApp "${COPY_APP_PATH}"
-	cp -rf "${COPY_APP_PATH}/" "${BUILD_APP_PATH}/"
+	if [ -f "${BUILD_APP_PATH}/../embedded.mobileprovision" ]; then
+		mv "${BUILD_APP_PATH}/../embedded.mobileprovision" "${BUILD_APP_PATH}"
+	fi
 
 	# get target info
 	ORIGIN_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier"  "${COPY_APP_PATH}/Info.plist" 2>/dev/null)
@@ -164,7 +179,6 @@ function pack(){
 
 	# Update Info.plist for Target App
 	if [[ "${TARGET_DISPLAY_NAME}" != "" ]]; then
-		/usr/libexec/PlistBuddy -c "Set :CFBundleName ${TARGET_DISPLAY_NAME}" "${TARGET_INFO_PLIST}"
 		for file in `ls "${BUILD_APP_PATH}"`;
 		do
 			extension="${file#*.}"
@@ -172,7 +186,6 @@ function pack(){
 				if [[ "${extension}" == "lproj" ]]; then
 					if [[ -f "${BUILD_APP_PATH}/${file}/InfoPlist.strings" ]];then
 						/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${TARGET_DISPLAY_NAME}" "${BUILD_APP_PATH}/${file}/InfoPlist.strings"
-						/usr/libexec/PlistBuddy -c "Set :CFBundleName ${TARGET_DISPLAY_NAME}" "${BUILD_APP_PATH}/${file}/InfoPlist.strings"
 					fi
 		    	fi
 			fi
